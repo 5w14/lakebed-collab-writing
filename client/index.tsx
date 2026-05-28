@@ -519,10 +519,38 @@ function BasicPage({ theme, toggleTheme, title }: ThemeProps & { title: string }
   return <div className={`min-h-screen ${c.bg} ${c.text} font-mono`}><header className={`border-b ${c.border} ${c.bg}`}><div className="mx-auto flex max-w-7xl items-center justify-between px-4 py-3"><Link className="inline-flex items-center gap-1 text-sm font-bold" to="/"><IconArrowLeft /> DOCUMENTS</Link><IconButton className={c.border} onClick={toggleTheme}>{theme === "dark" ? <IconSun /> : <IconMoon />} {theme === "dark" ? "LIGHT" : "DARK"}</IconButton></div></header><main className="mx-auto max-w-7xl px-4 py-10"><h1 className="text-lg font-bold">{title}</h1></main></div>;
 }
 
+function SignInRequired({ theme, toggleTheme }: ThemeProps) {
+  const c = classes(theme);
+  return (
+    <div className={`min-h-screen ${c.bg} ${c.text} font-mono`}>
+      <header className={`border-b ${c.border} ${c.bg}`}>
+        <div className="mx-auto flex max-w-7xl items-center justify-between px-4 py-3">
+          <span className="text-sm font-bold">SHARED WRITING</span>
+          <IconButton className={c.border} onClick={toggleTheme}>{theme === "dark" ? <IconSun /> : <IconMoon />} {theme === "dark" ? "LIGHT" : "DARK"}</IconButton>
+        </div>
+      </header>
+      <main className="mx-auto flex max-w-7xl flex-col items-start gap-4 px-4 py-10">
+        <h1 className="text-lg font-bold">Sign in required</h1>
+        <p className="text-sm">Guest access is disabled.</p>
+        <SignInWithGoogle callbackPath="/" className={`inline-flex cursor-pointer items-center gap-1 border ${c.border} px-3 py-2 text-xs font-bold`}>
+          <IconUser /> SIGN IN WITH GOOGLE
+        </SignInWithGoogle>
+      </main>
+    </div>
+  );
+}
+
+function AuthenticatedRoutes({ theme, toggleTheme }: ThemeProps) {
+  const auth = useAuth();
+  if (auth.isLoading) return <BasicPage theme={theme} toggleTheme={toggleTheme} title="Loading…" />;
+  if (auth.isGuest) return <SignInRequired theme={theme} toggleTheme={toggleTheme} />;
+  return <Routes><Route path="/" element={<Dashboard theme={theme} toggleTheme={toggleTheme} />} /><Route path="/documents/:id" element={<DocumentPage theme={theme} toggleTheme={toggleTheme} />} /><Route path="/auth/callback" element={<BasicPage theme={theme} toggleTheme={toggleTheme} title="Signing in…" />} /><Route path="*" element={<BasicPage theme={theme} toggleTheme={toggleTheme} title="Not found" />} /></Routes>;
+}
+
 export function App() {
   const [theme, setTheme] = useState<Theme>(() => { try { return (localStorage.getItem("theme") as Theme) || "dark"; } catch { return "dark"; } });
   useEffect(() => { try { localStorage.setItem("theme", theme); } catch {} }, [theme]);
   useEffect(() => { void completeGoogleCallbackIfNeeded(); }, []);
   const toggleTheme = useCallback(() => setTheme((t) => (t === "dark" ? "light" : "dark")), []);
-  return <Router><Routes><Route path="/" element={<Dashboard theme={theme} toggleTheme={toggleTheme} />} /><Route path="/documents/:id" element={<DocumentPage theme={theme} toggleTheme={toggleTheme} />} /><Route path="/auth/callback" element={<BasicPage theme={theme} toggleTheme={toggleTheme} title="Signing in…" />} /><Route path="*" element={<BasicPage theme={theme} toggleTheme={toggleTheme} title="Not found" />} /></Routes></Router>;
+  return <Router><AuthenticatedRoutes theme={theme} toggleTheme={toggleTheme} /></Router>;
 }

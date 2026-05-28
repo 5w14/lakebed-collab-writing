@@ -41,6 +41,7 @@ export default capsule({
 
   queries: {
     workspace: query((ctx) => {
+      if (ctx.auth.isGuest) return { documents: [], members: [], cursors: [] };
       const userId = ctx.auth.userId;
       const documents = ctx.db.documents.orderBy("updatedAt", "desc").all();
       const members = ctx.db.documentMembers.all();
@@ -65,6 +66,7 @@ export default capsule({
 
   mutations: {
     createDocument: mutation((ctx, title: string) => {
+      if (ctx.auth.isGuest) return;
       return ctx.db.documents.insert({
         title: cleanTitle(title),
         content: "",
@@ -75,6 +77,7 @@ export default capsule({
     }),
 
     updateDocument: mutation((ctx, id: string, title: string, content: string) => {
+      if (ctx.auth.isGuest) return;
       const doc = ctx.db.documents.get(id);
       if (!doc) return;
       const members = ctx.db.documentMembers.where("documentId", id).all();
@@ -85,12 +88,14 @@ export default capsule({
 
     ...(COLLAB_FEATURES_ENABLED ? {
       setDocumentAccess: mutation((ctx, id: string, access: string) => {
+        if (ctx.auth.isGuest) return;
         const doc = ctx.db.documents.get(id);
         if (!doc || doc.ownerId !== ctx.auth.userId) return;
         ctx.db.documents.update(id, { access: cleanAccess(access) });
       }),
 
       inviteMember: mutation((ctx, documentId: string, userId: string, role: string) => {
+        if (ctx.auth.isGuest) return;
         const doc = ctx.db.documents.get(documentId);
         if (!doc || doc.ownerId !== ctx.auth.userId) return;
         const cleanId = cleanUserId(userId);
@@ -110,12 +115,14 @@ export default capsule({
       })
     } : {
       setDocumentReadAccess: mutation((ctx, id: string, access: string) => {
+        if (ctx.auth.isGuest) return;
         const doc = ctx.db.documents.get(id);
         if (!doc || doc.ownerId !== ctx.auth.userId) return;
         ctx.db.documents.update(id, { access: cleanReadAccess(access) });
       }),
 
       inviteViewer: mutation((ctx, documentId: string, userId: string) => {
+        if (ctx.auth.isGuest) return;
         const doc = ctx.db.documents.get(documentId);
         if (!doc || doc.ownerId !== ctx.auth.userId) return;
         const cleanId = cleanUserId(userId);
@@ -135,6 +142,7 @@ export default capsule({
     }),
 
     removeMember: mutation((ctx, memberId: string) => {
+      if (ctx.auth.isGuest) return;
       const member = ctx.db.documentMembers.get(memberId);
       if (!member) return;
       const doc = ctx.db.documents.get(member.documentId);
@@ -143,6 +151,7 @@ export default capsule({
     }),
 
     deleteDocument: mutation((ctx, documentId: string) => {
+      if (ctx.auth.isGuest) return;
       const doc = ctx.db.documents.get(documentId);
       if (!doc || doc.ownerId !== ctx.auth.userId) return;
 
@@ -159,6 +168,7 @@ export default capsule({
 
     ...(COLLAB_FEATURES_ENABLED ? {
       updateCursor: mutation((ctx, documentId: string, x: string, y: string, selection: string) => {
+        if (ctx.auth.isGuest) return;
         const doc = ctx.db.documents.get(documentId);
         if (!doc) return;
         const members = ctx.db.documentMembers.where("documentId", documentId).all();
@@ -185,6 +195,7 @@ export default capsule({
       }),
 
       deleteCursor: mutation((ctx, documentId: string) => {
+        if (ctx.auth.isGuest) return;
         const existing = ctx.db.cursors
           .where("documentId", documentId)
           .all()
