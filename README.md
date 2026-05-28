@@ -1,18 +1,33 @@
 # shared-writing
 
-Run this Lakebed capsule:
+A Lakebed shared writing capsule with:
+
+- multiple stored documents
+- autosaving collaborative editing
+- live session pins
+- shared cursor presence
+- owner/invite/public-view/public-edit access controls
+- Google sign-in or local guest identities
+
+Run locally:
 
 ```sh
 npx lakebed dev
 ```
 
-The starter app includes two client routes:
+Open separate identities to test collaboration:
 
-- `/`: the todo list.
-- `/status`: a page that calls the `GET /api/status` endpoint.
+```txt
+http://localhost:3000/?lakebed_guest=alice
+http://localhost:3000/?lakebed_guest=bob
+```
 
-You can also call the endpoint directly:
+In the app, copy a user's id from the header/sidebar and invite it to a private document, or switch a document to public view/public edit.
+
+Inspect local state while dev is running:
 
 ```sh
-curl http://localhost:3000/api/status
+npx lakebed db list --port 3000
+npx lakebed db dump --port 3000
+npx lakebed logs --port 3000
 ```
