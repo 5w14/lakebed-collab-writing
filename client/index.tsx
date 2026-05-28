@@ -1,4 +1,4 @@
-import { Link, Route, Router, Routes, signInWithGoogle, signOut, useAuth, useMutation, useNavigate, useParams, useQuery } from "lakebed/client";
+import { Link, Route, Router, Routes, SignInWithGoogle, signOut, useAuth, useMutation, useNavigate, useParams, useQuery } from "lakebed/client";
 import { useCallback, useEffect, useMemo, useRef, useState } from "preact/hooks";
 import { cleanContent, cleanTitle, userColor, type AccessMode, type Document, type DocumentMember, type Workspace } from "../shared/writing";
 
@@ -64,7 +64,9 @@ function AuthControls({ theme }: { theme: Theme }) {
   return (
     <div className="flex items-center gap-2">
       {auth.isGuest ? (
-        <IconButton className={c.border} onClick={() => void signInWithGoogle()}><IconUser /> SIGN IN</IconButton>
+        <SignInWithGoogle callbackPath="/" className={`inline-flex cursor-pointer items-center gap-1 border ${c.border} px-2 py-1 text-xs`}>
+          <IconUser /> SIGN IN
+        </SignInWithGoogle>
       ) : (
         <IconButton className={c.border} onClick={() => signOut()}><IconLogOut /> SIGN OUT</IconButton>
       )}
@@ -446,6 +448,60 @@ function DocumentPage({ theme, toggleTheme }: ThemeProps) {
   );
 }
 
+function decodeBase64UrlJson(value: string) {
+  try {
+    const normalized = value.replace(/-/g, "+").replace(/_/g, "/");
+    const padded = normalized.padEnd(Math.ceil(normalized.length / 4) * 4, "=");
+    return JSON.parse(atob(padded));
+  } catch {
+    return null;
+  }
+}
+
+async function completeGoogleCallbackIfNeeded() {
+  const url = new URL(window.location.href);
+  const code = url.searchParams.get("code");
+  if (!code) return;
+
+  const rawPkce = window.sessionStorage.getItem("lakebed_google_pkce");
+  const pkce = rawPkce ? JSON.parse(rawPkce) : null;
+  if (!pkce?.verifier) return;
+
+  const redirectUri = `${window.location.origin}${url.pathname}`;
+  const body = new URLSearchParams({
+    client_id: `origin:${window.location.origin}`,
+    code,
+    code_verifier: pkce.verifier,
+    grant_type: "authorization_code",
+    redirect_uri: redirectUri,
+  });
+
+  const response = await fetch("https://shoo.dev/token", {
+    body,
+    headers: { "Content-Type": "application/x-www-form-urlencoded" },
+    method: "POST",
+  });
+  if (!response.ok) return;
+
+  const token = await response.json();
+  const idToken = token.id_token;
+  const claims = typeof idToken === "string" ? decodeBase64UrlJson(idToken.split(".")[1] ?? "") : null;
+  const userId = token.pairwise_sub ?? claims?.pairwise_sub ?? claims?.sub;
+  if (!idToken || !userId) return;
+
+  window.localStorage.setItem("lakebed_identity", JSON.stringify({
+    expiresIn: token.expires_in,
+    receivedAt: Date.now(),
+    token: idToken,
+    userId,
+  }));
+  window.sessionStorage.removeItem("lakebed_google_pkce");
+
+  const returnTo = window.sessionStorage.getItem("lakebed_google_return_to") || "/";
+  window.sessionStorage.removeItem("lakebed_google_return_to");
+  window.location.replace(returnTo);
+}
+
 function BasicPage({ theme, toggleTheme, title }: ThemeProps & { title: string }) {
   const c = classes(theme);
   return <div className={`min-h-screen ${c.bg} ${c.text} font-mono`}><header className={`border-b ${c.border} ${c.bg}`}><div className="mx-auto flex max-w-7xl items-center justify-between px-4 py-3"><Link className="inline-flex items-center gap-1 text-sm font-bold" to="/"><IconArrowLeft /> DOCUMENTS</Link><IconButton className={c.border} onClick={toggleTheme}>{theme === "dark" ? <IconSun /> : <IconMoon />} {theme === "dark" ? "LIGHT" : "DARK"}</IconButton></div></header><main className="mx-auto max-w-7xl px-4 py-10"><h1 className="text-lg font-bold">{title}</h1></main></div>;
@@ -454,6 +510,7 @@ function BasicPage({ theme, toggleTheme, title }: ThemeProps & { title: string }
 export function App() {
   const [theme, setTheme] = useState<Theme>(() => { try { return (localStorage.getItem("theme") as Theme) || "dark"; } catch { return "dark"; } });
   useEffect(() => { try { localStorage.setItem("theme", theme); } catch {} }, [theme]);
+  useEffect(() => { void completeGoogleCallbackIfNeeded(); }, []);
   const toggleTheme = useCallback(() => setTheme((t) => (t === "dark" ? "light" : "dark")), []);
-  return <Router><Routes><Route path="/" element={<Dashboard theme={theme} toggleTheme={toggleTheme} />} /><Route path="/documents/:id" element={<DocumentPage theme={theme} toggleTheme={toggleTheme} />} /><Route path="*" element={<BasicPage theme={theme} toggleTheme={toggleTheme} title="Not found" />} /></Routes></Router>;
+  return <Router><Routes><Route path="/" element={<Dashboard theme={theme} toggleTheme={toggleTheme} />} /><Route path="/documents/:id" element={<DocumentPage theme={theme} toggleTheme={toggleTheme} />} /><Route path="/auth/callback" element={<BasicPage theme={theme} toggleTheme={toggleTheme} title="Signing in…" />} /><Route path="*" element={<BasicPage theme={theme} toggleTheme={toggleTheme} title="Not found" />} /></Routes></Router>;
 }
