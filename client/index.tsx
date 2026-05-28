@@ -1,6 +1,6 @@
 import { Link, Route, Router, Routes, SignInWithGoogle, signOut, useAuth, useMutation, useNavigate, useParams, useQuery } from "lakebed/client";
 import { useCallback, useEffect, useMemo, useRef, useState } from "preact/hooks";
-import { cleanContent, cleanTitle, userColor, type AccessMode, type Document, type DocumentMember, type Workspace } from "../shared/writing";
+import { COLLAB_DOCUMENT_SYNC_DELAY_MS, COLLAB_FEATURES_ENABLED, CURSOR_HEARTBEAT_MS, CURSOR_SYNC_THROTTLE_MS, DOCUMENT_SYNC_DELAY_MS, cleanContent, cleanTitle, userColor, type AccessMode, type Document, type DocumentMember, type ReadAccessMode, type Workspace } from "../shared/writing";
 
 type Theme = "dark" | "light";
 type WidthMode = "slim" | "wide";
@@ -79,6 +79,7 @@ function canRead(doc: Document, members: DocumentMember[], userId: string) {
   return doc.ownerId === userId || doc.access === "view" || doc.access === "edit" || members.some((m) => m.userId === userId);
 }
 function canEdit(doc: Document, members: DocumentMember[], userId: string) {
+  if (!COLLAB_FEATURES_ENABLED) return doc.ownerId === userId;
   return doc.ownerId === userId || doc.access === "edit" || members.some((m) => m.userId === userId && m.role === "editor");
 }
 function canManage(doc: Document, userId: string) {
@@ -158,8 +159,12 @@ function AccessDialog({ doc, members, manageable, theme }: { doc: Document; memb
   const auth = useAuth();
   const navigate = useNavigate();
   const dialogRef = useRef<HTMLDialogElement>(null);
-  const setDocumentAccess = useMutation<[id: string, access: AccessMode], void>("setDocumentAccess");
-  const inviteMember = useMutation<[documentId: string, userId: string, role: string], void>("inviteMember");
+  const setDocumentAccess = COLLAB_FEATURES_ENABLED
+    ? useMutation<[id: string, access: AccessMode], void>("setDocumentAccess")
+    : useMutation<[id: string, access: ReadAccessMode], void>("setDocumentReadAccess");
+  const inviteUser = COLLAB_FEATURES_ENABLED
+    ? useMutation<[documentId: string, userId: string, role: string], void>("inviteMember")
+    : useMutation<[documentId: string, userId: string], void>("inviteViewer");
   const removeMember = useMutation<[memberId: string], void>("removeMember");
   const deleteDocument = useMutation<[documentId: string], void>("deleteDocument");
   const c = classes(theme);
@@ -168,7 +173,11 @@ function AccessDialog({ doc, members, manageable, theme }: { doc: Document; memb
     event.preventDefault();
     const form = event.currentTarget as HTMLFormElement;
     const data = new FormData(form);
-    await inviteMember(doc.id, String(data.get("userId") ?? ""), String(data.get("role") ?? "editor"));
+    if (COLLAB_FEATURES_ENABLED) {
+      await inviteUser(doc.id, String(data.get("userId") ?? ""), String(data.get("role") ?? "editor"));
+    } else {
+      await inviteUser(doc.id, String(data.get("userId") ?? ""));
+    }
     form.reset();
   }
 
@@ -183,17 +192,20 @@ function AccessDialog({ doc, members, manageable, theme }: { doc: Document; memb
         <div className="p-4 text-xs">
           <p className="mb-3">Owner: {doc.ownerName}</p>
           {manageable ? (
-            <select className={`mb-4 w-full border ${c.border} ${c.bg} ${c.text} px-2 py-2 outline-none`} value={doc.access} onChange={(event) => void setDocumentAccess(doc.id, (event.currentTarget as HTMLSelectElement).value as AccessMode)}>
+            <select className={`mb-4 w-full border ${c.border} ${c.bg} ${c.text} px-2 py-2 outline-none`} value={doc.access === "edit" && !COLLAB_FEATURES_ENABLED ? "view" : doc.access} onChange={(event) => void setDocumentAccess(doc.id, (event.currentTarget as HTMLSelectElement).value as AccessMode)}>
               <option value="private">Private</option>
               <option value="view">Public view</option>
-              <option value="edit">Public edit</option>
+              {COLLAB_FEATURES_ENABLED ? <option value="edit">Public edit</option> : null}
             </select>
           ) : <div className={`mb-4 border ${c.border} px-2 py-2`}>{doc.access}</div>}
 
           {manageable ? (
             <form className={`mb-4 grid gap-2 border-b ${c.border} pb-4`} onSubmit={(event) => void invite(event)}>
               <input className={`border ${c.border} ${c.bg} ${c.text} px-2 py-2 outline-none`} name="userId" placeholder="Invite by user id" />
-              <select className={`border ${c.border} ${c.bg} ${c.text} px-2 py-2 outline-none`} name="role"><option value="editor">Editor</option><option value="viewer">Viewer</option></select>
+              <select className={`border ${c.border} ${c.bg} ${c.text} px-2 py-2 outline-none`} name="role">
+                {COLLAB_FEATURES_ENABLED ? <option value="editor">Editor</option> : null}
+                <option value="viewer">Viewer</option>
+              </select>
               <button className={`inline-flex cursor-pointer items-center gap-1 border ${c.border} px-2 py-2 font-bold`} type="submit"><IconPlus /> INVITE</button>
             </form>
           ) : null}
@@ -234,8 +246,8 @@ function DocumentPage({ theme, toggleTheme }: ThemeProps) {
   const { id = "" } = useParams<{ id: string }>();
   const workspace = useQuery<Workspace>("workspace");
   const updateDocument = useMutation<[id: string, title: string, content: string], void>("updateDocument");
-  const updateCursor = useMutation<[documentId: string, x: string, y: string, selection: string], void>("updateCursor");
-  const deleteCursor = useMutation<[documentId: string], void>("deleteCursor");
+  const updateCursor = COLLAB_FEATURES_ENABLED ? useMutation<[documentId: string, x: string, y: string, selection: string], void>("updateCursor") : async () => {};
+  const deleteCursor = COLLAB_FEATURES_ENABLED ? useMutation<[documentId: string], void>("deleteCursor") : async () => {};
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const loadedDocId = useRef("");
   const lastServerVersion = useRef("");
@@ -247,7 +259,7 @@ function DocumentPage({ theme, toggleTheme }: ThemeProps) {
 
   const workspaceDocuments = workspace?.documents ?? [];
   const workspaceMembers = workspace?.members ?? [];
-  const workspaceCursors = workspace?.cursors ?? [];
+  const workspaceCursors = COLLAB_FEATURES_ENABLED ? (workspace?.cursors ?? []) : [];
   const doc = workspaceDocuments.find((item) => item.id === id);
   const members = workspaceMembers.filter((member) => member.documentId === id);
   const cursors = workspaceCursors.filter((cursor) => cursor.documentId === id);
@@ -371,26 +383,26 @@ function DocumentPage({ theme, toggleTheme }: ThemeProps) {
           setSaved("saved");
         }
       });
-    }, cursors.length > 0 ? 80 : 450);
+    }, COLLAB_FEATURES_ENABLED && cursors.length > 0 ? COLLAB_DOCUMENT_SYNC_DELAY_MS : DOCUMENT_SYNC_DELAY_MS);
     return () => window.clearTimeout(timer);
   }, [title, content, doc?.id, editable, cursors.length]);
 
   useEffect(() => {
-    if (!doc || !editable) return;
+    if (!COLLAB_FEATURES_ENABLED || !doc || !editable) return;
     void updateCursor(doc.id, "0", "0", "");
     return () => { void deleteCursor(doc.id); };
   }, [doc?.id, editable, auth.userId]);
 
   useEffect(() => {
-    if (!doc || !editable || cursors.length === 0) return;
-    const interval = setInterval(() => publishCaret(true), 2500);
+    if (!COLLAB_FEATURES_ENABLED || !doc || !editable || cursors.length === 0) return;
+    const interval = setInterval(() => publishCaret(true), CURSOR_HEARTBEAT_MS);
     return () => clearInterval(interval);
   }, [doc?.id, editable, auth.userId, cursors.length]);
 
   function publishCaret(force = false) {
     const now = Date.now();
-    if (!force && now - lastCursorAt.current < 120) return;
-    if (!doc || !editable || cursors.length === 0) return;
+    if (!force && now - lastCursorAt.current < CURSOR_SYNC_THROTTLE_MS) return;
+    if (!COLLAB_FEATURES_ENABLED || !doc || !editable || cursors.length === 0) return;
     lastCursorAt.current = now;
     const t = textareaRef.current;
     if (!t) return;

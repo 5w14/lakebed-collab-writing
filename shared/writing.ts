@@ -1,4 +1,13 @@
+export const DOCUMENT_SYNC_DELAY_MS = 1500;
+
+export const COLLAB_FEATURES_ENABLED = false;
+export const COLLAB_DOCUMENT_SYNC_DELAY_MS = 80;
+export const CURSOR_SYNC_THROTTLE_MS = 120;
+export const CURSOR_HEARTBEAT_MS = 2500;
+export const CURSOR_TIMEOUT_MS = 15000;
+
 export type AccessMode = "private" | "view" | "edit";
+export type ReadAccessMode = "private" | "view";
 export type MemberRole = "viewer" | "editor";
 
 export type Document = {
@@ -66,6 +75,10 @@ export function cleanAccess(value: string): AccessMode {
   return "private";
 }
 
+export function cleanReadAccess(value: string): ReadAccessMode {
+  return value === "view" ? "view" : "private";
+}
+
 export function cleanCoordinate(value: string): string {
   const n = Number(value);
   if (!Number.isFinite(n)) {
@@ -75,8 +88,14 @@ export function cleanCoordinate(value: string): string {
 }
 
 const PALETTE = [
-  "#ef4444", "#f97316", "#eab308", "#22c55e",
-  "#06b6d4", "#3b82f6", "#a855f7", "#ec4899",
+  "#ef4444",
+  "#f97316",
+  "#eab308",
+  "#22c55e",
+  "#06b6d4",
+  "#3b82f6",
+  "#a855f7",
+  "#ec4899",
 ];
 
 export function userColor(userId: string): string {
